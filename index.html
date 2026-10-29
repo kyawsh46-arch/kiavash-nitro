@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>KIAVASH NITRO ⚡</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:radial-gradient(circle,#17264b,#050711);
+ color:white;font-family:Tahoma,Arial,sans-serif;text-align:center;
+}
+header{padding:16px}
+h1{color:#39f5ff;text-shadow:0 0 15px #39f5ff;margin:5px}
+p{color:#b8c8e8;font-size:13px;line-height:1.8}
+.stats{display:flex;justify-content:center;gap:8px;margin:8px}
+.stat{background:#111a30;border:1px solid #30456c;border-radius:12px;padding:10px;flex:1;max-width:120px}
+.stat span{display:block;color:#39f5ff;font-size:20px;margin-top:5px}
+.game{position:relative;width:min(94vw,600px);margin:auto}
+canvas{display:block;width:100%;aspect-ratio:1;background:#080d1d;border:2px solid #39f5ff;border-radius:16px;touch-action:none}
+#menu{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#050711eF;border-radius:16px;padding:15px}
+.card{background:#111a30;border:1px solid #39f5ff;border-radius:20px;padding:22px;max-width:350px;width:100%}
+button,select{background:linear-gradient(100deg,#39f5ff,#8b5cff);color:#071020;border:0;border-radius:12px;padding:12px 17px;font-size:15px;font-weight:bold;margin:4px;cursor:pointer}
+select{max-width:100%}
+.speedBox{margin:12px 0;color:#b8c8e8;font-size:13px}
+.speedBox label{display:block;margin-bottom:8px}
+.controls{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:300px;margin:12px auto}
+.controls button{font-size:21px;padding:12px}
+.blank{visibility:hidden}
+.actions{margin:10px}
+#message{color:#ffd166;min-height:22px;font-size:13px;padding:4px}
+</style>
+</head>
+<body>
+<header>
+<h1>🐍 KIAVASH NITRO ⚡</h1>
+<p>بخور، بزرگ شو و آخرین خانه خالی را پیدا کن!</p>
+</header>
+
+<div class="stats">
+ <div class="stat">امتیاز<span id="score">۰</span></div>
+ <div class="stat">طول مار<span id="length">۵</span></div>
+ <div class="stat">رکورد<span id="best">۰</span></div>
+</div>
+
+<div class="game">
+<canvas id="board" width="600" height="600"></canvas>
+<div id="menu">
+ <div class="card">
+  <h2 id="title">KIAVASH NITRO</h2>
+  <p id="desc">با کشیدن انگشت مار را حرکت بده. میوه‌ها اضافه می‌شوند و تا زمان خوردن باقی می‌مانند.</p>
+
+  <div class="speedBox">
+   <label for="speed">⚡ سرعت حرکت مار</label>
+   <select id="speed">
+    <option value="260">خیلی آرام</option>
+    <option value="220">آرام‌تر</option>
+    <option value="180" selected>آرام</option>
+    <option value="125">معمولی</option>
+    <option value="95">سریع</option>
+    <option value="70">خیلی سریع</option>
+    <option value="48">فوق سریع</option>
+   </select>
+  </div>
+
+  <button id="start">🐍 ماربازی</button>
+ </div>
+</div>
+</div>
+
+<div id="message">آماده‌ای؟ بازی را شروع کن!</div>
+
+<div class="controls">
+ <span class="blank"></span><button data-dir="up">⬆️</button><span class="blank"></span>
+ <button data-dir="left">⬅️</button><button data-dir="down">⬇️</button><button data-dir="right">➡️</button>
+</div>
+
+<div class="actions">
+ <button id="pause">⏸ توقف</button>
+ <button id="restart">🔄 شروع دوباره</button>
+</div>
+
+<script>
+(()=>{
+"use strict";
+
+const canvas=document.getElementById("board");
+const ctx=canvas.getContext("2d");
+const $=id=>document.getElementById(id);
+
+const N=22,CELL=600/N;
+
+const fruitsTypes=[
+ ["🍎",10],["🍌",15],["🍒",20],["🍑",25],
+ ["🍊",30],["🍋",35],["🍉",50],["🥥",55],
+ ["🍍",60],["🥭",70],["🍇",40],["🥝",45],
+ ["🍓",25],["🫐",35],["🍐",30],["🍈",40],
+ ["🍅",12],["🥑",45],["🍏",18],["🍊",28]
+];
+
+let snake=[],dir={x:1,y:0},nextDir={x:1,y:0};
+let fruits=[],particles=[];
+let score=0,best=0;
+let running=false,paused=false,ended=false;
+let finalMode=false;
+let stepTime=180,lastStep=0,lastFruit=0;
+let animation=0,touch=null;
+
+try{
+ best=Number(localStorage.getItem("knNitroBest")||0);
+}catch(e){}
+
+$("best").textContent=fa(best);
+
+function fa(n){
+ return Math.floor(n).toLocaleString("fa-IR");
+}
+
+function random(n){
+ return Math.floor(Math.random()*n);
+}
+
+function same(a,b){
+ return a.x===b.x&&a.y===b.y;
+}
+
+function occupied(p){
+ return snake.some(s=>same(s,p))||
+ fruits.some(f=>same(f,p));
+}
+
+function freeCell(){
+ const free=[];
+ for(let y=0;y<N;y++){
+  for(let x=0;x<N;x++){
+   const p={x,y};
+   if(!occupied(p))free.push(p);
+  }
+ }
+ return free.length?free[random(free.length)]:null;
+}
+
+function spawnFruit(final=false){
+ const p=freeCell();
+ if(!p)return;
+
+ const type=fruitsTypes[random(fruitsTypes.length)];
+
+ fruits.push({
+  x:p.x,y:p.y,
+  emoji:final?"🌟":type[0],
+  points:final?500:type[1],
+  final
+ });
+}
+
+function stats(){
+ $("score").textContent=fa(score);
+ $("length").textContent=fa(snake.length);
+ $("best").textContent=fa(best);
+}
+
+function newGame(){
+ cancelAnimationFrame(animation);
+
+ snake=[];
+ const x=Math.floor(N/2),y=Math.floor(N/2);
+
+ for(let i=0;i<5;i++){
+  snake.push({x:x-i,y});
+ }
+
+ dir={x:1,y:0};
+ nextDir={x:1,y:0};
+
+ fruits=[];
+ particles=[];
+ score=0;
+ finalMode=false;
+ ended=false;
+ paused=false;
+ running=true;
+
+ stepTime=Number($("speed").value)||180;
+
+ for(let i=0;i<3;i++)spawnFruit();
+
+ lastStep=performance.now();
+ lastFruit=lastStep;
+
+ $("menu").style.display="none";
+ $("pause").textContent="⏸ توقف";
+ $("message").textContent="بازی شروع شد! 🍎";
+
+ stats();
+ draw();
+ animation=requestAnimationFrame(loop);
+}
+
+function showMenu(title,desc,button){
+ $("title").textContent=title;
+ $("desc").textContent=desc;
+ $("start").textContent=button;
+ $("menu").style.display="flex";
+}
+
+function finish(win){
+ running=false;
+ paused=false;
+ ended=true;
+ cancelAnimationFrame(animation);
+
+ if(win){
+  $("message").textContent="🏆 برنده شدی!";
+  showMenu(
+   "🏆 KIAVASH NITRO WINNER!",
+   "تبریک! میوه نهایی را خوردی. امتیاز تو: "+fa(score),
+   "🔄 بازی دوباره"
+  );
+ }else{
+  $("message").textContent="💥 بازی تمام شد!";
+  showMenu(
+   "بازی تمام شد",
+   "مار به بدن خودش برخورد کرد. امتیاز: "+fa(score),
+   "🔄 تلاش دوباره"
+  );
+ }
+}
+
+function changeDir(name){
+ const dirs={
+  up:{x:0,y:-1},
+  down:{x:0,y:1},
+  left:{x:-1,y:0},
+  right:{x:1,y:0}
+ };
+
+ const d=dirs[name];
+
+ if(!d||!running||paused)return;
+ if(d.x===-dir.x&&d.y===-dir.y)return;
+ if(d.x===-nextDir.x&&d.y===-nextDir.y)return;
+
+ nextDir=d;
+}
+
+function move(){
+ dir=nextDir;
+
+ const head={
+  x:snake[0].x+dir.x,
+  y:snake[0].y+dir.y
+ };
+
+ // خروج از یک طرف و ورود از طرف مقابل
+ head.x=(head.x+N)%N;
+ head.y=(head.y+N)%N;
+
+ const fruitIndex=fruits.findIndex(f=>same(f,head));
+ const grows=fruitIndex>=0;
+
+ const body=grows?snake:snake.slice(0,-1);
+
+ if(body.some(s=>same(s,head))){
+  finish(false);
+  return;
+ }
+
+ snake.unshift(head);
+
+ if(grows){
+  const fruit=fruits.splice(fruitIndex,1)[0];
+  score+=fruit.points;
+
+  $("message").textContent=
+   fruit.emoji+" +"+fa(fruit.points)+" امتیاز";
+
+  burst(head.x,head.y);
+
+  if(score>best){
+   best=score;
+   try{
+    localStorage.setItem("knNitroBest",String(best));
+   }catch(e){}
+  }
+
+  if(fruit.final){
+   stats();
+   finish(true);
+   return;
+  }
+ }else{
+  snake.pop();
+ }
+
+ const empty=N*N-snake.length;
+
+ if(empty===1&&!finalMode){
+  finalMode=true;
+  fruits=[];
+
+  const p=freeCell();
+
+  if(p){
+   fruits.push({
+    x:p.x,y:p.y,
+    emoji:"🌟",
+    points:500,
+    final:true
+   });
+  }
+
+  $("message").textContent="⭐ مرحله نهایی! ستاره را بخور!";
+ }
+
+ if(empty===0){
+  stats();
+  finish(true);
+  return;
+ }
+
+ stats();
+}
+
+function burst(x,y){
+ for(let i=0;i<12;i++){
+  const a=Math.random()*Math.PI*2;
+  const s=1+Math.random()*3;
+
+  particles.push({
+   x:x+.5,y:y+.5,
+   vx:Math.cos(a)*s,
+   vy:Math.sin(a)*s,
+   life:28
+  });
+ }
+}
+
+function draw(){
+ ctx.clearRect(0,0,600,600);
+
+ const bg=ctx.createLinearGradient(0,0,600,600);
+ bg.addColorStop(0,"#080e23");
+ bg.addColorStop(1,"#170b28");
+
+ ctx.fillStyle=bg;
+ ctx.fillRect(0,0,600,600);
+
+ ctx.strokeStyle="rgba(57,245,255,.10)";
+ ctx.lineWidth=1;
+
+ for(let i=0;i<=N;i++){
+  ctx.beginPath();
+  ctx.moveTo(i*CELL,0);
+  ctx.lineTo(i*CELL,600);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(0,i*CELL);
+  ctx.lineTo(600,i*CELL);
+  ctx.stroke();
+ }
+
+ // میوه‌ها
+ for(const f of fruits){
+  const x=(f.x+.5)*CELL;
+  const y=(f.y+.5)*CELL;
+
+  ctx.save();
+  ctx.shadowBlur=f.final?28:15;
+  ctx.shadowColor=f.final?"#ffd166":"#ff3cce";
+  ctx.font=(CELL*.72)+"px sans-serif";
+  ctx.textAlign="center";
+  ctx.textBaseline="middle";
+  ctx.fillText(f.emoji,x,y);
+  ctx.restore();
+ }
+
+ // بدن مار
+ for(let i=snake.length-1;i>=0;i--){
+  const s=snake[i];
+  const x=(s.x+.5)*CELL;
+  const y=(s.y+.5)*CELL;
+
+  const g=ctx.createLinearGradient(x-12,y-12,x+12,y+12);
+
+  g.addColorStop(0,i===0?"#dfffff":"#39f5ff");
+  g.addColorStop(1,i===0?"#4675ff":"#2854dc");
+
+  ctx.save();
+  ctx.shadowBlur=i===0?20:9;
+  ctx.shadowColor="#39f5ff";
+  ctx.fillStyle=g;
+  ctx.beginPath();
+  ctx.arc(x,y,CELL*(i===0?.43:.38),0,Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+ }
+
+ // چشم‌ها و زبان
+ if(snake.length){
+  const h=snake[0];
+  const x=(h.x+.5)*CELL;
+  const y=(h.y+.5)*CELL;
+  const px=-dir.y,py=dir.x;
+
+  for(const side of [-1,1]){
+   const ex=x+dir.x*4+px*side*5;
+   const ey=y+dir.y*4+py*side*5;
+
+   ctx.fillStyle="white";
+   ctx.beginPath();
+   ctx.arc(ex,ey,4.1,0,Math.PI*2);
+   ctx.fill();
+
+   ctx.fillStyle="#07101d";
+   ctx.beginPath();
+   ctx.arc(ex+dir.x*1.5,ey+dir.y*1.5,2.1,0,Math.PI*2);
+   ctx.fill();
+  }
+
+  if(Math.sin(performance.now()/95)>.25){
+   const tx=x+dir.x*CELL*.47;
+   const ty=y+dir.y*CELL*.47;
+
+   ctx.strokeStyle="#ff416e";
+   ctx.lineWidth=2.5;
+   ctx.beginPath();
+
+   ctx.moveTo(
+    x+dir.x*CELL*.3,
+    y+dir.y*CELL*.3
+   );
+
+   ctx.lineTo(tx,ty);
+   ctx.lineTo(tx+px*4,ty+py*4);
+   ctx.moveTo(tx,ty);
+   ctx.lineTo(tx-px*4,ty-py*4);
+   ctx.stroke();
+  }
+ }
+
+ // ذرات افکت
+ for(const p of particles){
+  ctx.globalAlpha=Math.max(0,p.life/28);
+  ctx.fillStyle="#ffd166";
+  ctx.beginPath();
+  ctx.arc(p.x*CELL,p.y*CELL,2.5,0,Math.PI*2);
+  ctx.fill();
+  ctx.globalAlpha=1;
+ }
+}
+
+function loop(now){
+ if(!running||paused)return;
+
+ if(now-lastStep>=stepTime){
+  move();
+  lastStep=now;
+ }
+
+ if(!finalMode&&now-lastFruit>=2500){
+  lastFruit=now;
+
+  if(fruits.length<Math.min(12,Math.floor(N/2))){
+   spawnFruit();
+  }
+ }
+
+ for(let i=particles.length-1;i>=0;i--){
+  const p=particles[i];
+
+  p.x+=p.vx*.012;
+  p.y+=p.vy*.012;
+  p.vx*=.96;
+  p.vy*=.96;
+  p.life--;
+
+  if(p.life<=0)particles.splice(i,1);
+ }
+
+ draw();
+
+ if(running&&!paused){
+  animation=requestAnimationFrame(loop);
+ }
+}
+
+// شروع بازی یا ادامه بازی
+$("start").addEventListener("click",()=>{
+ if(paused){
+  paused=false;
+  running=true;
+  stepTime=Number($("speed").value)||180;
+  $("menu").style.display="none";
+  $("pause").textContent="⏸ توقف";
+  $("message").textContent="بازی ادامه پیدا کرد!";
+  lastStep=performance.now();
+  animation=requestAnimationFrame(loop);
+ }else{
+  newGame();
+ }
+});
+
+$("restart").addEventListener("click",newGame);
+
+// توقف و ادامه
+$("pause").addEventListener("click",()=>{
+ if(paused){
+  paused=false;
+  running=true;
+  stepTime=Number($("speed").value)||180;
+  $("menu").style.display="none";
+  $("pause").textContent="⏸ توقف";
+  $("message").textContent="بازی ادامه پیدا کرد!";
+  lastStep=performance.now();
+  animation=requestAnimationFrame(loop);
+  return;
+ }
+
+ if(!running)return;
+
+ paused=true;
+ cancelAnimationFrame(animation);
+
+ $("pause").textContent="▶️ ادامه";
+ $("message").textContent="بازی متوقف شد";
+
+ showMenu(
+  "⏸ بازی متوقف شد",
+  "برای ادامه، دکمه زیر را بزن.",
+  "▶️ ادامه بازی"
+ );
+});
+
+// کنترل لمسی
+document.querySelectorAll("[data-dir]").forEach(b=>{
+ b.addEventListener("click",()=>changeDir(b.dataset.dir));
+});
+
+canvas.addEventListener("pointerdown",e=>{
+ touch={x:e.clientX,y:e.clientY};
+});
+
+canvas.addEventListener("pointerup",e=>{
+ if(!touch)return;
+
+ const dx=e.clientX-touch.x;
+ const dy=e.clientY-touch.y;
+ touch=null;
+
+ if(Math.max(Math.abs(dx),Math.abs(dy))<15)return;
+
+ if(Math.abs(dx)>Math.abs(dy)){
+  changeDir(dx>0?"right":"left");
+ }else{
+  changeDir(dy>0?"down":"up");
+ }
+});
+
+// کنترل با صفحه‌کلید
+window.addEventListener("keydown",e=>{
+ const map={
+  ArrowUp:"up",
+  ArrowDown:"down",
+  ArrowLeft:"left",
+  ArrowRight:"right"
+ };
+
+ if(map[e.key]){
+  e.preventDefault();
+  changeDir(map[e.key]);
+ }
+
+ if(e.key===" "&&running){
+  e.preventDefault();
+  $("pause").click();
+ }
+});
+
+// توقف خودکار هنگام خروج از صفحه
+document.addEventListener("visibilitychange",()=>{
+ if(document.hidden&&running&&!paused){
+  $("pause").click();
+ }
+});
+
+// نمایش اولیه
+function idleDraw(){
+ snake=[
+  {x:11,y:11},
+  {x:10,y:11},
+  {x:9,y:11},
+  {x:8,y:11},
+  {x:7,y:11}
+ ];
+
+ fruits=[
+  {x:15,y:8,emoji:"🍎",points:10}
+ ];
+
+ draw();
+ stats();
+}
+
+idleDraw();
+
+})();
+</script>
+</body>
+  </html>
